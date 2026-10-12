@@ -45,7 +45,7 @@ class Duck {
     this.diff = difficulty;
     this.depth = 35 + Math.random() * 20;
     const b = this.bounds();
-    
+
     this.dir = Math.random() < 0.5 ? -1 : 1;
     this.pos = new THREE.Vector3(-this.dir * b.x * 0.95, b.minY + Math.random() * (b.maxY - b.minY), -this.depth);
     this.vel = new THREE.Vector2(this.dir * difficulty.speed, 0);
@@ -53,6 +53,25 @@ class Duck {
     this.escaped = false;
     this.radius = 1.8;
     this.awareness = 0;
+
+    this.aimHistory = [];
+    this.aimVelocity = new THREE.Vector3();
+    this.lastAimPoint = new THREE.Vector3();
+    this.hasLastAim = false;
+
+    this.maneuverTime = 0;
+    this.maneuverCooldown = 0;
+    this.maneuverX = 0;
+    this.maneuverY = 0;
+
+    this.fakeout = 0;
+    this.dodgeCount = 0;
+    this.huntPressure = 0;
+    this.personalStyle = Math.random();
+
+    this.recovery = 0;
+    this.lastDodgeDir = 0;
+
     this.cooldown = 0.5;
     this.panic = 0;
     this.life = difficulty.life;
@@ -94,12 +113,12 @@ class Duck {
     let nx = this.offset.x;
     let ny = this.offset.y;
     const len = Math.hypot(nx, ny);
-    
+
     if (len < 0.05) {
       const a = Math.random() * Math.PI * 2;
       nx = Math.cos(a);
       ny = Math.sin(a);
-    } 
+    }
     else {
       nx /= len;
       ny /= len;
@@ -108,17 +127,52 @@ class Duck {
     const turn = (Math.random() - 0.5) * 1.2;
     const cx = nx * Math.cos(turn) - ny * Math.sin(turn);
     let cy = nx * Math.sin(turn) + ny * Math.cos(turn);
-    
+
     if (this.pos.y < b.minY + 3 && cy < 0) cy = -cy;
     if (this.pos.y > b.maxY - 3 && cy > 0) cy = -cy;
-    
-    const impulse = this.diff.impulse * (0.8 + Math.random() * 0.5);
+
+    const pressureBoost = 1 + this.huntPressure * 0.65;
+    const impulse = this.diff.impulse
+      * (0.8 + Math.random() * 0.5)
+      * pressureBoost;
     this.vel.x += cx * impulse;
     this.vel.y += cy * impulse;
+
+
+    this.dodgeCount++;
+
+    const roll = Math.random();
+
+    if (roll < 0.35) {
+      this.maneuverX = cx * 1.8;
+      this.maneuverY = cy * 0.5;
+      this.maneuverTime = 0.28 + Math.random() * 0.22;
+    } else if (roll < 0.65) {
+      this.maneuverX = cx * 0.5;
+      this.maneuverY = (Math.random() < 0.5 ? -1 : 1)
+        * (1.5 + Math.random());
+      this.maneuverTime = 0.35 + Math.random() * 0.25;
+    } else if (roll < 0.85) {
+      this.maneuverX = -cx * 1.6;
+      this.maneuverY = cy * 0.8;
+      this.maneuverTime = 0.18 + Math.random() * 0.12;
+      this.fakeout = 0.22;
+    } else {
+      this.maneuverX = (Math.random() < 0.5 ? -1 : 1) * 2.2;
+      this.maneuverY = (Math.random() < 0.5 ? -1 : 1) * 1.5;
+      this.maneuverTime = 0.3 + Math.random() * 0.3;
+    }
+
+    this.maneuverCooldown = 0.25 + Math.random() * 0.4;
+    this.recovery = 0.3 + Math.random() * 0.4;
+    this.lastDodgeDir = Math.sign(cx);
+
     const speed = this.vel.length();
     if (speed > 32) this.vel.multiplyScalar(32 / speed);
     if (Math.abs(this.vel.x) > 2) this.dir = Math.sign(this.vel.x);
-    this.cooldown = this.diff.cooldown * (0.8 + Math.random() * 0.5);
+    this.cooldown = this.diff.cooldown
+      * (0.8 + Math.random() * 0.5)
+      / (1 + this.huntPressure * 0.4);
     this.awareness = 0;
     this.wingBoost = 0.5;
     Sfx.quack();
@@ -126,8 +180,44 @@ class Duck {
 
   update(dt, ray) {
     this.time += dt;
+
+    const aimPoint = new THREE.Vector3();
+    const planeT = (-this.depth - ray.origin.z) / ray.direction.z;
+
+    if (Math.abs(ray.direction.z) > 0.0001 && planeT >= 0) {
+      aimPoint.copy(ray.origin).addScaledVector(ray.direction, planeT);
+    } else {
+      aimPoint.copy(this.pos);
+    }
+
+    if (this.hasLastAim && dt > 0) {
+      const rawVelocity = aimPoint.clone()
+        .sub(this.lastAimPoint)
+        .divideScalar(dt);
+
+      this.aimVelocity.lerp(
+        rawVelocity,
+        Math.min(1, dt * 8)
+      );
+    }
+
+    this.lastAimPoint.copy(aimPoint);
+    this.hasLastAim = true;
+
+    this.aimHistory.push({
+      point: aimPoint.clone(),
+      time: this.time
+    });
+
+    while (
+      this.aimHistory.length > 0 &&
+      this.time - this.aimHistory[0].time > 0.35
+    ) {
+      this.aimHistory.shift();
+    }
+
     const b = this.bounds();
-    
+
     if (this.state === "dead") {
       this.vel.y -= 34 * dt;
       this.pos.x += this.vel.x * dt;
@@ -135,50 +225,107 @@ class Duck {
       this.group.rotation.z += this.spin * dt;
       this.group.rotation.x += 3 * dt;
       this.group.position.copy(this.pos);
-      
+
       if (this.pos.y < -14) this.state = "gone";
       return;
     }
-    
+
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.panic = Math.max(0, this.panic - dt);
+    this.maneuverCooldown = Math.max(0, this.maneuverCooldown - dt);
+    this.maneuverTime = Math.max(0, this.maneuverTime - dt);
+    this.recovery = Math.max(0, this.recovery - dt);
+    this.fakeout = Math.max(0, this.fakeout - dt);
+
+    if (this.fakeout > 0 && this.maneuverTime > 0) {
+      this.maneuverX *= -1;
+      this.fakeout = 0;
+    }
+
     this.wingBoost = Math.max(0, (this.wingBoost || 0) - dt);
 
     if (this.state === "fly") {
       this.life -= dt;
-      
+
       if (this.life <= 0) {
         this.state = "escape";
         this.vel.set(this.dir * 5, 15);
       }
+
       ray.closestPointToPoint(this.pos, this.closest);
       this.offset.copy(this.pos).sub(this.closest);
-      
-      if (this.offset.length() < this.diff.radius) {
+
+      const aimDistance = this.offset.length();
+      const aimSpeed = this.aimVelocity.length();
+
+      const threat =
+        aimDistance < this.diff.radius * 1.8 &&
+        aimSpeed > 0.8;
+
+      if (aimDistance < this.diff.radius) {
         this.awareness += dt;
+        this.huntPressure = Math.min(1, this.huntPressure + dt * 1.8);
       } else {
         this.awareness = Math.max(0, this.awareness - dt * 2);
+        this.huntPressure = Math.max(0, this.huntPressure - dt * 0.5);
       }
-      
-      if (this.awareness >= this.diff.reaction && this.cooldown <= 0) this.dodge(b);
+
+      const predictedAim = this.closest.clone().addScaledVector(
+        this.aimVelocity,
+        0.12
+      );
+
+      const predictedDistance = predictedAim.distanceTo(this.pos);
+
+      if (threat && predictedDistance < this.diff.radius * 1.3) {
+        this.awareness += dt * 2.5;
+      }
+
+      if (
+        (this.awareness >= this.diff.reaction ||
+          (threat && predictedDistance < this.diff.radius * 0.7)) &&
+        this.cooldown <= 0
+      ) {
+        this.dodge(b);
+      }
+
       const mult = this.panic > 0 ? 1.5 : 1;
-      const targetX = this.dir * this.diff.speed * mult;
-      const targetY = Math.sin(this.time * 1.7 + this.phase) * 1.8;
-      const k = Math.min(1, dt * 2.2);
+
+      let targetX = this.dir * this.diff.speed * mult;
+      let targetY = Math.sin(this.time * 1.7 + this.phase) * 1.8;
+
+      if (this.maneuverTime > 0) {
+        targetX += this.maneuverX * this.diff.speed;
+        targetY += this.maneuverY * this.diff.speed * 0.7;
+      }
+
+      targetY += Math.sin(
+        this.time * (2.2 + this.personalStyle * 2) + this.phase
+      ) * (0.5 + this.personalStyle);
+
+      targetX += Math.sin(
+        this.time * 3 + this.phase * 2
+      ) * this.personalStyle * 0.8;
+
+      const k = Math.min(1, dt * (
+        this.recovery > 0 ? 1.2 : 2.2
+      ));
+
       this.vel.x += (targetX - this.vel.x) * k;
       this.vel.y += (targetY - this.vel.y) * k;
+
       this.pos.x += this.vel.x * dt;
       this.pos.y += this.vel.y * dt;
-      
+
       if (this.pos.x > b.x) { this.pos.x = b.x; this.dir = -1; this.vel.x = Math.min(this.vel.x, 0); }
       if (this.pos.x < -b.x) { this.pos.x = -b.x; this.dir = 1; this.vel.x = Math.max(this.vel.x, 0); }
       if (this.pos.y > b.maxY) { this.pos.y = b.maxY; this.vel.y = -Math.abs(this.vel.y) * 0.5; }
       if (this.pos.y < b.minY) { this.pos.y = b.minY; this.vel.y = Math.abs(this.vel.y) * 0.5; }
-    } 
+    }
     else {
       this.pos.x += this.vel.x * dt;
       this.pos.y += this.vel.y * dt;
-      
+
       if (this.pos.y > b.maxY + 12) {
         this.state = "gone";
         this.escaped = true;
@@ -186,9 +333,9 @@ class Duck {
     }
 
     const flap = Math.sin(this.time * (this.flapSpeed + (this.wingBoost > 0 ? 14 : 0)));
-    
+
     for (const wing of this.wings) wing.pivot.rotation.x = wing.side * flap * 0.85;
-    
+
     this.group.rotation.y = this.dir > 0 ? 0 : Math.PI;
     this.group.rotation.z = THREE.MathUtils.clamp(this.vel.y * 0.035, -0.5, 0.5);
     this.group.position.copy(this.pos);
