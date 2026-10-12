@@ -41,6 +41,34 @@
     <script src="js/audio.js"></script>
     <script src="js/duck.js"></script>
     <script src="js/game.js"></script>
+    <script>
+        let y8Sdk;
+
+        window.addEventListener("y8sdk.ready", function () {
+            y8Sdk = y8.sdk();
+
+            const appConfig = {
+                appId: '6acce3e0f3cade1a6394966e',
+                autoLogin: true
+            };
+
+            // adConfig is optional — omit it if your game doesn't use ads
+            const adConfig = {
+                gameId: '287361',
+                preloadAdBreaks: 'on',
+                sound: 'on',
+                onReady: () => { }
+            };
+
+            y8Sdk.init(appConfig, adConfig);
+            y8Sdk.onAuth((user, error) => { });
+        }, { once: true });
+
+        // Handle the case where the SDK already loaded
+        if (window.y8 && window.y8.emitReadyEvent) {
+            window.y8.emitReadyEvent();
+        }
+    </script>
 </body>
 
 </html>

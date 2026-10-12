@@ -228,6 +228,32 @@
     over.classList.remove("hidden");
   }
 
+  function restartWithAd() {
+    if (state.mode !== "over") return;
+
+    if (!y8Sdk) {
+      begin();
+      return;
+    }
+
+    let restarted = false;
+
+    function restartOnce() {
+      if (restarted) return;
+      restarted = true;
+      begin();
+    }
+
+    y8Sdk.showAd({
+      type: "next",
+      name: "restart-after-game-over",
+      afterAd: restartOnce
+    }).catch((error) => {
+      console.error("Y8 ad error:", error);
+      restartOnce();
+    });
+  }
+
   function burst(position) {
     for (let i = 0; i < 12; i++) {
       const mesh = new THREE.Mesh(featherGeo, featherMats[i % featherMats.length]);
@@ -414,7 +440,7 @@
   window.addEventListener("resize", resize);
   window.addEventListener("contextmenu", e => e.preventDefault());
   document.getElementById("start").addEventListener("click", begin);
-  document.getElementById("restart").addEventListener("click", begin);
+  document.getElementById("restart").addEventListener("click", restartWithAd);
 
   resize();
   updateAim();
