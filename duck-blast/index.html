@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Duck Blast 3D</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <canvas id="view"></canvas>
+    <div id="crosshair"></div>
+    <div id="hud" class="hidden">
+        <div id="score">SCORE 0</div>
+        <div id="wave">WAVE 1</div>
+        <div id="lives"></div>
+        <div id="shells"></div>
+        <div id="banner"></div>
+    </div>
+    <div id="flash"></div>
+    <section id="menu" class="panel">
+        <h1>DUCK BLAST 3D</h1>
+        <p>The ducks can see your aim. Hit them before they dodge.</p>
+        <ul>
+            <li>Mouse: aim the shotgun</li>
+            <li>Left click: fire</li>
+            <li>R: reload</li>
+            <li>P: pause</li>
+        </ul>
+        <button id="start">START HUNT</button>
+    </section>
+    <section id="over" class="panel hidden">
+        <h1>GAME OVER</h1>
+        <p id="final"></p>
+        <p id="best"></p>
+        <button id="restart">HUNT AGAIN</button>
+    </section>
+    <script src="js/three.min.js"></script>
+    <script src="js/audio.js"></script>
+    <script src="js/duck.js"></script>
+    <script src="js/game.js"></script>
+</body>
+
+</html>
